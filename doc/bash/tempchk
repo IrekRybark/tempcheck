@@ -1,0 +1,72 @@
+#!/bin/bash
+# IR:2012-05-19 
+# The script logs the system temperature 
+# and checks individual sensors for exceeding maximum temperature.
+# In case of exceeded temperature sends an email with alert.
+
+# retrieve the host name
+HOST=$(hostname)
+
+#ToDo: archive the log
+LOGNAME="/var/log/sensors.log"
+
+# define sensor retrieval config
+SENS[0]="TEMP1"
+TAG[0]="temp1:"
+VALFROM[0]=7
+VALTO[0]=12
+TEMPMAX[0]=48
+
+SENS[1]="CPU"
+TAG[1]="CPU Temperature:"
+VALFROM[1]=17
+VALTO[1]=22
+TEMPMAX[1]=52
+
+SENS[2]="MB"
+TAG[2]="MB Temperature:"
+VALFROM[2]=16
+VALTO[2]=21
+TEMPMAX[2]=52
+
+MSG=""     # alert message
+LOGSENS="" # list of sensors for the log
+LOGVAL=""  # list of sensors' values for the log
+
+# go through the sensors output lines loking for the interesting ones
+for idx in $(seq 0 $((${#SENS[@]} - 1)))
+do 
+  # search for a line related to the sensor indicated by the tag
+  TEMPLINE=$(sensors | grep "${TAG[$idx]}")
+
+  # retrieve the numerical value of the temperature
+  TEMPVAL=$(echo $TEMPLINE | cut -c "${VALFROM[$idx]}"-"${VALTO[$idx]}" | \
+            sed s/\ // | sed s/\+//)
+
+  # collect log output values
+  if [ -n "$LOGSENS" ]; then
+		LOGSENS=$LOGSENS","
+	fi	
+  LOGSENS=$LOGSENS"${SENS[$idx]}"
+  LOGVAL=$LOGVAL","$TEMPVAL
+
+  # check if any value exceeds max
+  TEMPMAX="${TEMPMAX[$idx]}"
+  if [ $(bc <<< "$TEMPMAX <= $TEMPVAL") -eq 1 ]
+    then
+	if [ -n "$MSG" ]; then 
+		MSG=$MSG"; "
+	fi	    
+	MSG=$MSG" "${SENS[$idx]}" value "$TEMPVAL" exceeded "$TEMPMAX
+  fi
+
+done
+
+# log the current values
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S") 
+echo $TIMESTAMP",("$LOGSENS")"$LOGVAL >> $LOGNAME
+
+# if we have any values exceeding max, send an email
+if [ -n "$MSG" ]; then
+	sndeml $HOST" Alert: temperature exceeded" "$MSG" 
+fi	    
